@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- VAYU Theme — iOS 28 Glassmorphism -->
+    <style name="Theme.VAYU" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/cyan_primary</item>
+        <item name="colorPrimaryVariant">@color/cyan_dim</item>
+        <item name="colorOnPrimary">@color/black</item>
+        <item name="colorSecondary">@color/cyan_primary</item>
+        <item name="colorSurface">@color/bg_primary</item>
+        <item name="colorOnSurface">@color/text_primary</item>
+        <item name="android:colorBackground">@color/bg_primary</item>
+        <item name="android:statusBarColor">@color/bg_primary</item>
+        <item name="android:navigationBarColor">@color/bg_primary</item>
+        <item name="android:windowBackground">@color/bg_primary</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+
+    <!-- Glass Card Style -->
+    <style name="VayuCard" parent="Widget.MaterialComponents.CardView">
+        <item name="cardBackgroundColor">@color/bg_card</item>
+        <item name="cardCornerRadius">@dimen/card_corner</item>
+        <item name="cardElevation">0dp</item>
+        <item name="strokeColor">@color/divider</item>
+        <item name="strokeWidth">1dp</item>
+    </style>
+
+    <!-- Glass Input Style -->
+    <style name="VayuInput" parent="Widget.MaterialComponents.TextInputLayout.FilledBox">
+        <item name="boxBackgroundColor">@color/bg_input</item>
+        <item name="boxCornerRadiusTopStart">@dimen/input_corner</item>
+        <item name="boxCornerRadiusTopEnd">@dimen/input_corner</item>
+        <item name="boxCornerRadiusBottomStart">@dimen/input_corner</item>
+        <item name="boxCornerRadiusBottomEnd">@dimen/input_corner</item>
+        <item name="boxStrokeColor">@color/cyan_primary</item>
+        <item name="hintTextColor">@color/text_tertiary</item>
+        <item name="android:textColorHint">@color/text_tertiary</item>
+    </style>
+</resources>

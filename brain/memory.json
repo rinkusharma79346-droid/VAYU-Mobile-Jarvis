@@ -1,0 +1,14 @@
+{
+  "app_patterns": {},
+  "ui_patterns": {},
+  "task_history": [],
+  "error_patterns": {},
+  "shortcuts": {},
+  "preferences": {},
+  "stats": {
+    "total_tasks": 0,
+    "success_rate": 0.0,
+    "avg_steps": 0.0,
+    "last_updated": ""
+  }
+}

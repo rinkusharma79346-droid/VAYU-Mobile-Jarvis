@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">VAYU</string>
+    <string name="accessibility_description">VAYU AI Agent — Controls your phone autonomously to complete tasks. Needs full access to read screen content and perform gestures.</string>
+
+    <!-- Status -->
+    <string name="status_service">Service</string>
+    <string name="status_brain">Brain</string>
+    <string name="status_task">Task</string>
+    <string name="status_steps">Steps</string>
+    <string name="status_timer">Timer</string>
+
+    <!-- HUD -->
+    <string name="hud_stop">STOP</string>
+    <string name="hud_step">Step</string>
+
+    <!-- Main -->
+    <string name="main_task_hint">What should I do?</string>
+    <string name="main_button_start">Execute</string>
+    <string name="main_recent_tasks">Recent Tasks</string>
+    <string name="main_kill_switch">ABORT</string>
+
+    <!-- States -->
+    <string name="state_online">ONLINE</string>
+    <string name="state_offline">OFFLINE</string>
+    <string name="state_running">RUNNING</string>
+    <string name="state_idle">IDLE</string>
+    <string name="state_done">DONE</string>
+    <string name="state_failed">FAILED</string>
+    <string name="state_aborted">ABORTED</string>
+
+    <!-- Notifications -->
+    <string name="notif_channel">VAYU Agent</string>
+    <string name="notif_channel_desc">Shows when VAYU is actively working</string>
+    <string name="notif_title">VAYU Working</string>
+    <string name="notif_text">Step %1$d — %2$s</string>
+</resources>
