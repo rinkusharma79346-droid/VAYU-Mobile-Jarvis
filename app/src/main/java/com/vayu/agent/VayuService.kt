@@ -106,7 +106,7 @@ class VayuService : AccessibilityService() {
     // ──────────────────────────────────────────────
 
     private suspend fun pollForTasks() {
-        while (coroutineContext.isActive) {
+        while (scope.coroutineContext.isActive) {
             if (!isRunning && !shouldAbort) {
                 try {
                     val task = checkPendingTask()
@@ -377,12 +377,33 @@ class VayuService : AccessibilityService() {
 
     private fun captureScreen(): String? {
         return try {
+            // Use takeScreenshot with callback API (Android API 30+)
             val displayMetrics = resources.displayMetrics
             val screenWidth = displayMetrics.widthPixels
             val screenHeight = displayMetrics.heightPixels
-            val bitmap = takeScreenshot(screenWidth, screenHeight, 0) ?: return null
+
+            var resultBitmap: Bitmap? = null
+            val latch = java.util.concurrent.CountDownLatch(1)
+
+            takeScreenshot(Display.DEFAULT_DISPLAY, screenWidth, screenHeight,
+                { runnable -> handler.post(runnable) },
+                object : TakeScreenshotCallback {
+                    override fun onScreenshot(bitmap: Bitmap) {
+                        resultBitmap = bitmap
+                        latch.countDown()
+                    }
+                    override fun onError(errorCode: Int) {
+                        Log.e(TAG, "Screenshot error code: $errorCode")
+                        latch.countDown()
+                    }
+                }
+            )
+
+            // Wait up to 2 seconds for screenshot
+            latch.await(2, java.util.concurrent.TimeUnit.SECONDS)
+            val bitmap = resultBitmap ?: return null
+
             val stream = ByteArrayOutputStream()
-            // Compress to reduce size — brain doesn't need full res
             val halfW = (bitmap.width / 2).coerceAtLeast(1)
             val halfH = (bitmap.height / 2).coerceAtLeast(1)
             val scaled = Bitmap.createScaledBitmap(bitmap, halfW, halfH, true)
