@@ -10,6 +10,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Base64
 import android.util.Log
+import android.view.Display
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.Toast
@@ -105,7 +106,7 @@ class VayuService : AccessibilityService() {
     // ──────────────────────────────────────────────
 
     private suspend fun pollForTasks() {
-        while (isActive) {
+        while (coroutineContext.isActive) {
             if (!isRunning && !shouldAbort) {
                 try {
                     val task = checkPendingTask()
@@ -376,14 +377,19 @@ class VayuService : AccessibilityService() {
 
     private fun captureScreen(): String? {
         return try {
-            val bitmap = takeScreenshot() ?: return null
+            val displayMetrics = resources.displayMetrics
+            val screenWidth = displayMetrics.widthPixels
+            val screenHeight = displayMetrics.heightPixels
+            val bitmap = takeScreenshot(screenWidth, screenHeight, 0) ?: return null
             val stream = ByteArrayOutputStream()
             // Compress to reduce size — brain doesn't need full res
-            val scaled = Bitmap.createScaledBitmap(bitmap, bitmap.width / 2, bitmap.height / 2, true)
+            val halfW = (bitmap.width / 2).coerceAtLeast(1)
+            val halfH = (bitmap.height / 2).coerceAtLeast(1)
+            val scaled = Bitmap.createScaledBitmap(bitmap, halfW, halfH, true)
             scaled.compress(Bitmap.CompressFormat.PNG, 70, stream)
             val base64 = Base64.encodeToString(stream.toByteArray(), Base64.NO_WRAP)
-            if (!bitmap.isRecycled) bitmap.recycle()
-            if (scaled !== bitmap && !scaled.isRecycled) scaled.recycle()
+            bitmap.recycle()
+            if (scaled !== bitmap) scaled.recycle()
             base64
         } catch (e: Exception) {
             Log.e(TAG, "Screenshot capture failed: ${e.message}")
@@ -628,5 +634,4 @@ class VayuService : AccessibilityService() {
         }
     }
 
-    private fun CoroutineScope.isActive(): Boolean = coroutineContext.isActive
 }
