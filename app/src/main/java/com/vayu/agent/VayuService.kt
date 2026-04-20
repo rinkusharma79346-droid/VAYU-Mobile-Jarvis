@@ -1,6 +1,7 @@
 package com.vayu.agent
 
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.AccessibilityService.ScreenshotResult
 import android.accessibilityservice.GestureDescription
 import android.content.Intent
 import android.graphics.Bitmap
@@ -377,19 +378,17 @@ class VayuService : AccessibilityService() {
 
     private fun captureScreen(): String? {
         return try {
-            // Use takeScreenshot with callback API (Android API 30+)
-            val displayMetrics = resources.displayMetrics
-            val screenWidth = displayMetrics.widthPixels
-            val screenHeight = displayMetrics.heightPixels
-
             var resultBitmap: Bitmap? = null
             val latch = java.util.concurrent.CountDownLatch(1)
 
-            takeScreenshot(Display.DEFAULT_DISPLAY, screenWidth, screenHeight,
+            takeScreenshot(
+                Display.DEFAULT_DISPLAY,
                 { runnable -> handler.post(runnable) },
                 object : TakeScreenshotCallback {
-                    override fun onScreenshot(bitmap: Bitmap) {
-                        resultBitmap = bitmap
+                    override fun onSuccess(result: ScreenshotResult) {
+                        resultBitmap = result.hardwareBuffer?.let { hb ->
+                            Bitmap.wrapHardwareBuffer(hb, null)
+                        }
                         latch.countDown()
                     }
                     override fun onError(errorCode: Int) {
@@ -401,7 +400,11 @@ class VayuService : AccessibilityService() {
 
             // Wait up to 2 seconds for screenshot
             latch.await(2, java.util.concurrent.TimeUnit.SECONDS)
-            val bitmap = resultBitmap ?: return null
+            val hwBitmap = resultBitmap ?: return null
+
+            // Convert hardware bitmap to software bitmap for compression
+            val bitmap = hwBitmap.copy(Bitmap.Config.ARGB_8888, false) ?: return null
+            hwBitmap.recycle()
 
             val stream = ByteArrayOutputStream()
             val halfW = (bitmap.width / 2).coerceAtLeast(1)
