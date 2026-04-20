@@ -391,7 +391,7 @@ class VayuService : AccessibilityService() {
                         }
                         latch.countDown()
                     }
-                    override fun onError(errorCode: Int) {
+                    override fun onFailure(errorCode: Int) {
                         Log.e(TAG, "Screenshot error code: $errorCode")
                         latch.countDown()
                     }
