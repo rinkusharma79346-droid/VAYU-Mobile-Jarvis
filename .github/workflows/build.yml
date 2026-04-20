@@ -9,7 +9,7 @@ on:
 
 jobs:
   build:
-    name: Build Debug & Release APK
+    name: Build VAYU APK
     runs-on: ubuntu-latest
 
     steps:
@@ -25,21 +25,6 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Gradle
-        run: |
-          wget -q https://services.gradle.org/distributions/gradle-8.5-bin.zip
-          unzip -q gradle-8.5-bin.zip
-          export PATH=$PWD/gradle-8.5/bin:$PATH
-          echo "PATH=$PWD/gradle-8.5/bin:$PATH" >> $GITHUB_ENV
-
-      - name: Generate Gradle Wrapper
-        run: |
-          cd $GITHUB_WORKSPACE
-          gradle wrapper --gradle-version 8.5
-
-      - name: Make gradlew executable
-        run: chmod +x gradlew
-
       - name: Cache Gradle packages
         uses: actions/cache@v4
         with:
@@ -49,8 +34,20 @@ jobs:
           key: gradle-${{ hashFiles('**/*.gradle.kts', '**/gradle-wrapper.properties') }}
           restore-keys: gradle-
 
+      - name: Create local.properties
+        run: echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
+
       - name: Accept Android Licenses
         run: yes | sdkmanager --licenses 2>/dev/null || true
+
+      - name: Install Gradle Wrapper
+        run: |
+          if [ ! -f gradlew ]; then
+            wget -q https://services.gradle.org/distributions/gradle-8.5-bin.zip -O /tmp/gradle.zip
+            unzip -q /tmp/gradle.zip -d /tmp
+            /tmp/gradle-8.5/bin/gradle wrapper --gradle-version 8.5
+          fi
+          chmod +x gradlew
 
       - name: Build Debug APK
         run: ./gradlew assembleDebug --no-daemon --stacktrace
@@ -62,7 +59,7 @@ jobs:
       - name: List build outputs
         run: |
           echo "=== Build Outputs ==="
-          find app/build/outputs -name "*.apk" -type f 2>/dev/null || echo "Searching..."
+          find app/build/outputs -name "*.apk" -type f 2>/dev/null || echo "No APKs found"
           ls -lh app/build/outputs/apk/debug/ 2>/dev/null || true
           ls -lh app/build/outputs/apk/release/ 2>/dev/null || true
 
