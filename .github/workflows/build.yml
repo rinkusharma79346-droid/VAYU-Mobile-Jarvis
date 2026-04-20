@@ -12,6 +12,10 @@ jobs:
     name: Build VAYU APK
     runs-on: ubuntu-latest
 
+    env:
+      GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8"
+      JAVA_OPTS: "-Xmx2048m"
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -25,6 +29,21 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Create local.properties
+        run: echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
+
+      - name: Accept Android Licenses
+        run: yes | sdkmanager --licenses 2>/dev/null || true
+
+      - name: Install Gradle & Generate Wrapper
+        run: |
+          if [ ! -f gradlew ]; then
+            wget -q https://services.gradle.org/distributions/gradle-8.5-bin.zip -O /tmp/gradle.zip
+            unzip -q /tmp/gradle.zip -d /tmp
+            /tmp/gradle-8.5/bin/gradle wrapper --gradle-version 8.5 --no-daemon
+          fi
+          chmod +x gradlew
+
       - name: Cache Gradle packages
         uses: actions/cache@v4
         with:
@@ -34,37 +53,22 @@ jobs:
           key: gradle-${{ hashFiles('**/*.gradle.kts', '**/gradle-wrapper.properties') }}
           restore-keys: gradle-
 
-      - name: Create local.properties
-        run: echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
-
-      - name: Accept Android Licenses
-        run: yes | sdkmanager --licenses 2>/dev/null || true
-
-      - name: Install Gradle Wrapper
-        run: |
-          if [ ! -f gradlew ]; then
-            wget -q https://services.gradle.org/distributions/gradle-8.5-bin.zip -O /tmp/gradle.zip
-            unzip -q /tmp/gradle.zip -d /tmp
-            /tmp/gradle-8.5/bin/gradle wrapper --gradle-version 8.5
-          fi
-          chmod +x gradlew
-
       - name: Build Debug APK
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+        run: ./gradlew assembleDebug --no-daemon --stacktrace -Dorg.gradle.jvmargs="-Xmx2048m -Dfile.encoding=UTF-8"
 
-      - name: Build Release APK (unsigned)
-        run: ./gradlew assembleRelease --no-daemon --stacktrace
+      - name: Build Release APK
+        run: ./gradlew assembleRelease --no-daemon --stacktrace -Dorg.gradle.jvmargs="-Xmx2048m -Dfile.encoding=UTF-8"
         continue-on-error: true
 
       - name: List build outputs
+        if: always()
         run: |
           echo "=== Build Outputs ==="
           find app/build/outputs -name "*.apk" -type f 2>/dev/null || echo "No APKs found"
-          ls -lh app/build/outputs/apk/debug/ 2>/dev/null || true
-          ls -lh app/build/outputs/apk/release/ 2>/dev/null || true
 
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: VAYU-debug-apk
           path: app/build/outputs/apk/debug/*.apk
@@ -77,14 +81,3 @@ jobs:
           name: VAYU-release-apk
           path: app/build/outputs/apk/release/*.apk
           retention-days: 30
-
-      - name: Create Release on tag
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v1
-        with:
-          files: |
-            app/build/outputs/apk/debug/*.apk
-            app/build/outputs/apk/release/*.apk
-          generate_release_notes: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
