@@ -48,7 +48,7 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "MainActivity"
-        private const val BRAIN_URL = "http://localhost:8082"
+        private const val BRAIN_URL = "http://127.0.0.1:8082"
         private const val OVERLAY_PERMISSION_CODE = 1001
     }
 

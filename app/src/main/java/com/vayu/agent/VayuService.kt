@@ -42,7 +42,7 @@ class VayuService : AccessibilityService() {
 
     companion object {
         private const val TAG = "VayuService"
-        private const val BRAIN_URL = "http://localhost:8082"
+        private const val BRAIN_URL = "http://127.0.0.1:8082"
         private const val MAX_STEPS = 50
         private const val STEP_DELAY_MS = 600L       // 0.6s per step (Jarvis speed)
         private const val SAME_SCREEN_THRESHOLD = 3   // Retry threshold before auto-recovery
@@ -198,6 +198,12 @@ class VayuService : AccessibilityService() {
         // Notify HUD
         notifyHUD("STARTED", 0, task.description)
 
+        // Give the system a moment to settle before we start capturing screens
+        delay(1000L)
+
+        // Track consecutive screenshot failures
+        var screenshotFailCount = 0
+
         try {
             while (currentStep < MAX_STEPS && !shouldAbort) {
                 currentStep++
@@ -206,10 +212,21 @@ class VayuService : AccessibilityService() {
                 // 1. Capture screenshot (Main thread required for Accessibility API)
                 val screenshot = captureScreen()
                 if (screenshot == null) {
-                    Log.e(TAG, "Step $currentStep: Failed to capture screenshot — retrying")
+                    screenshotFailCount++
+                    Log.e(TAG, "Step $currentStep: Failed to capture screenshot ($screenshotFailCount consecutive failures)")
+                    if (screenshotFailCount >= 3) {
+                        // 3 consecutive screenshot failures — fail gracefully
+                        Log.e(TAG, "3 consecutive screenshot failures — cannot proceed")
+                        handler.post {
+                            Toast.makeText(this@VayuService, "VAYU: Cannot capture screen — check accessibility permission", Toast.LENGTH_LONG).show()
+                        }
+                        completeTask(task, "FAILED", "Cannot capture screen — accessibility permission may be missing")
+                        return
+                    }
                     delay(STEP_DELAY_MS)
                     continue
                 }
+                screenshotFailCount = 0  // Reset on success
                 Log.d(TAG, "Step $currentStep: Screenshot captured (${screenshot.length} chars)")
 
                 // 2. Read UI tree (Main thread required for Accessibility API)
