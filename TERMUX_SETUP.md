@@ -42,7 +42,7 @@ pkg update -y && pkg upgrade -y
 pkg install git -y
 
 # Clone VAYU repository
-git clone https://github.com/rinkusharma79346-droid/Perfez-Verse.git ~/vayu
+git clone https://github.com/rinkusharma79346-droid/VAYU-Mobile-Jarvis.git ~/vayu
 
 # Navigate to brain folder
 cd ~/vayu/brain
@@ -171,7 +171,7 @@ curl http://localhost:8082/status
 ### Download the APK:
 
 ```
-1. Go to: https://github.com/rinkusharma79346-droid/Perfez-Verse/actions
+1. Go to: https://github.com/rinkusharma79346-droid/VAYU-Mobile-Jarvis/actions
 2. Click the latest "Build VAYU APK" workflow run
 3. Scroll down to "Artifacts"
 4. Download "VAYU-debug" (or "VAYU-release")

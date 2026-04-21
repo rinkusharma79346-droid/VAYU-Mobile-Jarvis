@@ -89,16 +89,16 @@ Picture-in-Picture floating overlay for when user exits the app.
 # Install Termux from F-Droid (not Play Store)
 # Open Termux and run:
 
-cd ~/storage/shared  # or wherever you put the brain folder
-cd VAYU/brain
-chmod +x setup_termux.sh
-./setup_termux.sh
+pkg update -y && pkg install git -y
+git clone https://github.com/rinkusharma79346-droid/VAYU-Mobile-Jarvis.git ~/vayu
+cd ~/vayu/brain
+bash setup_termux.sh
 
 # Set your Gemini API key
 export GEMINI_API_KEY='your-key-from-https://aistudio.google.com/app/apikey'
 
 # Start the brain (with auto-restart)
-~/vayu-run.sh
+vayu-brain
 ```
 
 ### Step 2: Android App (The Hands + Face)

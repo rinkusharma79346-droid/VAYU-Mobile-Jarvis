@@ -10,7 +10,7 @@
 #
 #  Usage:
 #    pkg update && pkg install git -y
-#    git clone https://github.com/rinkusharma79346-droid/Perfez-Verse.git vayu
+#    git clone https://github.com/rinkusharma79346-droid/VAYU-Mobile-Jarvis.git vayu
 #    cd vayu/brain
 #    bash setup_termux.sh
 #
@@ -151,7 +151,7 @@ done
 if [ -z "$BRAIN_SCRIPT" ]; then
     echo -e "${RED}✗ brain.py not found!${NC}"
     echo "  Clone the repo first:"
-    echo "  git clone https://github.com/rinkusharma79346-droid/Perfez-Verse.git ~/vayu"
+    echo "  git clone https://github.com/rinkusharma79346-droid/VAYU-Mobile-Jarvis.git ~/vayu"
     exit 1
 fi
 
@@ -321,7 +321,7 @@ echo ""
 echo -e "  ${BOLD}Install VAYU App:${NC}"
 echo ""
 echo -e "  Download APK from GitHub Actions:"
-echo -e "  ${CYAN}https://github.com/rinkusharma79346-droid/Perfez-Verse/actions${NC}"
+echo -e "  ${CYAN}https://github.com/rinkusharma79346-droid/VAYU-Mobile-Jarvis/actions${NC}"
 echo ""
 echo -e "  After installing APK:"
 echo -e "  • Enable VAYU in Settings → Accessibility"
