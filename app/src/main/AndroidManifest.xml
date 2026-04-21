@@ -17,6 +17,7 @@
     <application
         android:name=".VayuApp"
         android:allowBackup="false"
+        android:usesCleartextTraffic="true"
         android:icon="@mipmap/ic_launcher"
         android:label="VAYU"
         android:supportsRtl="true"
