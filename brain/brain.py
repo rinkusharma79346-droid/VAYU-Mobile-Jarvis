@@ -533,6 +533,8 @@ def act():
         history = data.get("history", [])
         mem_hints = data.get("memory", {})
 
+        log(f"/act called — task: '{task[:50]}' step: {step} screenshot: {len(screenshot)} chars uiTree: {len(ui_tree)} chars")
+
         # Get relevant memory from our persistent store
         relevant_memory = memory.get_relevant_memory(task)
         # Merge with any hints from the service
@@ -565,9 +567,16 @@ def act():
 
 @app.route("/task/pending", methods=["GET"])
 def task_pending():
-    """Get the next pending task for VayuService to pick up."""
+    """Get the next pending task for VayuService to pick up.
+
+    Uses get_next() which DEQUEUES the task and marks it as active.
+    This ensures each task is only picked up once by VayuService.
+    If VayuService is already running a task (active != None),
+    return the active task so it can resume if needed.
+    """
     task = task_queue.get_next()
     if task:
+        log(f"Task dispatched to VayuService: {task.get('description', task.get('id', '?'))[:50]}")
         return jsonify({"task": task, "has_task": True})
     return jsonify({"task": None, "has_task": False})
 

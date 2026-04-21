@@ -32,6 +32,11 @@ import java.util.concurrent.TimeUnit
  * Android AccessibilityService that controls the phone without root.
  * Captures screen, reads UI tree, polls brain.py for decisions,
  * and executes TAP/SWIPE/TYPE/SCROLL/OPEN_APP/PRESS_BACK/PRESS_HOME actions.
+ *
+ * Threading model:
+ * - Coroutine scope on Dispatchers.IO for network & heavy work
+ * - Switch to Dispatchers.Main for Accessibility API calls (screenshot, UI tree, gestures)
+ * - Handler on main looper for screenshot callbacks
  */
 class VayuService : AccessibilityService() {
 
@@ -64,8 +69,8 @@ class VayuService : AccessibilityService() {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val httpClient = OkHttpClient.Builder()
         .connectTimeout(5, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
-        .writeTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .writeTimeout(30, TimeUnit.SECONDS)
         .build()
 
     private val history = mutableListOf<HistoryItem>()
@@ -107,6 +112,7 @@ class VayuService : AccessibilityService() {
     // ──────────────────────────────────────────────
 
     private suspend fun pollForTasks() {
+        Log.i(TAG, "Task polling started")
         while (scope.coroutineContext.isActive) {
             if (!isRunning && !shouldAbort) {
                 try {
@@ -134,12 +140,20 @@ class VayuService : AccessibilityService() {
                 if (response.isSuccessful) {
                     val body = response.body?.string() ?: return null
                     val json = JsonParser.parseString(body).asJsonObject
-                    if (json.has("task") && !json.get("task").isJsonNull) {
-                        gson.fromJson(json.get("task"), VayuTask::class.java)
+                    val hasTask = json.has("has_task") && json.get("has_task").asBoolean
+                    if (hasTask && json.has("task") && !json.get("task").isJsonNull) {
+                        val taskObj = json.get("task").asJsonObject
+                        val desc = taskObj.get("description")?.asString ?: return null
+                        val id = taskObj.get("id")?.asString ?: "task_${System.currentTimeMillis()}"
+                        VayuTask(id = id, description = desc)
                     } else null
-                } else null
+                } else {
+                    Log.w(TAG, "Pending task check failed: ${response.code}")
+                    null
+                }
             }
         } catch (e: Exception) {
+            Log.d(TAG, "Brain not reachable: ${e.message}")
             null
         }
     }
@@ -162,7 +176,7 @@ class VayuService : AccessibilityService() {
 
     private suspend fun startTask(task: VayuTask) {
         if (isRunning) {
-            Log.w(TAG, "Already running a task, queuing: ${task.description}")
+            Log.w(TAG, "Already running a task, skipping: ${task.description}")
             return
         }
 
@@ -176,8 +190,10 @@ class VayuService : AccessibilityService() {
         sameScreenCount = 0
         taskStartTime = System.currentTimeMillis()
 
-        // Notify brain about the task
-        submitToBrain(task)
+        Log.i(TAG, "═══ STARTING TASK: ${task.description} ═══")
+
+        // Task was already submitted to brain by MainActivity
+        // Do NOT re-submit — that creates duplicates in the queue
 
         // Notify HUD
         notifyHUD("STARTED", 0, task.description)
@@ -187,24 +203,28 @@ class VayuService : AccessibilityService() {
                 currentStep++
                 lastAction = "Step $currentStep: Analyzing..."
 
-                // 1. Capture screenshot
+                // 1. Capture screenshot (Main thread required for Accessibility API)
                 val screenshot = captureScreen()
                 if (screenshot == null) {
-                    Log.e(TAG, "Failed to capture screenshot")
+                    Log.e(TAG, "Step $currentStep: Failed to capture screenshot — retrying")
                     delay(STEP_DELAY_MS)
                     continue
                 }
+                Log.d(TAG, "Step $currentStep: Screenshot captured (${screenshot.length} chars)")
 
-                // 2. Read UI tree
+                // 2. Read UI tree (Main thread required for Accessibility API)
                 val uiTree = readUITree()
+                Log.d(TAG, "Step $currentStep: UI tree read (${uiTree.length} chars)")
 
                 // 3. Check for same screen (stuck detection)
-                val screenHash = (screenshot.take(100) + uiTree.take(100)).hashCode().toString()
+                val screenHash = (screenshot.take(200) + uiTree.take(200)).hashCode().toString()
                 if (screenHash == previousScreenHash) {
                     sameScreenCount++
                     if (sameScreenCount >= SAME_SCREEN_THRESHOLD) {
                         Log.w(TAG, "Stuck on same screen for $sameScreenCount steps — auto-recovering")
-                        executeAction(BrainAction(action = "PRESS_BACK", reason = "Auto-recovery: stuck detection"))
+                        withContext(Dispatchers.Main) {
+                            performGlobalAction(GLOBAL_ACTION_BACK)
+                        }
                         sameScreenCount = 0
                         delay(STEP_DELAY_MS)
                         continue
@@ -217,7 +237,7 @@ class VayuService : AccessibilityService() {
                 // 4. Ask the brain what to do
                 val brainAction = askBrain(task.description, screenshot, uiTree)
                 if (brainAction == null) {
-                    Log.e(TAG, "Brain returned null — retrying in 1s")
+                    Log.e(TAG, "Step $currentStep: Brain returned null — retrying in 1s")
                     delay(1000L)
                     continue
                 }
@@ -234,8 +254,10 @@ class VayuService : AccessibilityService() {
                     result = ""
                 ))
 
-                // 7. Execute the action
-                val actionResult = executeAction(brainAction)
+                // 7. Execute the action (gestures need Main thread dispatch)
+                val actionResult = withContext(Dispatchers.Main) {
+                    executeAction(brainAction)
+                }
 
                 // 8. Update history with result
                 if (history.isNotEmpty()) {
@@ -292,6 +314,7 @@ class VayuService : AccessibilityService() {
             )
 
             val json = gson.toJson(request)
+            Log.d(TAG, "Sending to brain: ${json.take(200)}...")
             val httpRequest = Request.Builder()
                 .url("$BRAIN_URL/act")
                 .post(json.toRequestBody("application/json".toMediaType()))
@@ -300,12 +323,13 @@ class VayuService : AccessibilityService() {
             httpClient.newCall(httpRequest).execute().use { response ->
                 if (response.isSuccessful) {
                     val body = response.body?.string() ?: return null
+                    Log.d(TAG, "Brain response: ${body.take(300)}")
                     val jsonResp = JsonParser.parseString(body).asJsonObject
                     if (jsonResp.has("action")) {
                         gson.fromJson(jsonResp.get("action"), BrainAction::class.java)
                     } else null
                 } else {
-                    Log.e(TAG, "Brain error: ${response.code}")
+                    Log.e(TAG, "Brain error: ${response.code} — ${response.body?.string()?.take(200)}")
                     null
                 }
             }
@@ -329,7 +353,7 @@ class VayuService : AccessibilityService() {
                     val memory = mutableMapOf<String, String>()
                     if (json.has("memory")) {
                         json.get("memory").asJsonObject.entrySet().forEach { (key, value) ->
-                            memory[key] = value.asString
+                            memory[key] = value.toString()
                         }
                     }
                     memory
@@ -348,6 +372,7 @@ class VayuService : AccessibilityService() {
                 .post(json.toRequestBody("application/json".toMediaType()))
                 .build()
             httpClient.newCall(request).execute().close()
+            Log.d(TAG, "Task submitted to brain: ${task.description}")
         } catch (e: Exception) {
             Log.w(TAG, "Failed to submit task to brain: ${e.message}")
         }
@@ -367,69 +392,95 @@ class VayuService : AccessibilityService() {
                 .post(json.toRequestBody("application/json".toMediaType()))
                 .build()
             httpClient.newCall(request).execute().close()
+            Log.d(TAG, "Task result reported: $status")
         } catch (e: Exception) {
             Log.w(TAG, "Failed to report result to brain: ${e.message}")
         }
     }
 
     // ──────────────────────────────────────────────
-    // Screen Capture
+    // Screen Capture — Must run on Main thread
     // ──────────────────────────────────────────────
 
-    private fun captureScreen(): String? {
-        return try {
-            var resultBitmap: Bitmap? = null
-            val latch = java.util.concurrent.CountDownLatch(1)
+    private suspend fun captureScreen(): String? {
+        return withContext(Dispatchers.Main) {
+            try {
+                var resultBitmap: Bitmap? = null
+                val latch = java.util.concurrent.CountDownLatch(1)
 
-            takeScreenshot(
-                Display.DEFAULT_DISPLAY,
-                { runnable -> handler.post(runnable) },
-                object : TakeScreenshotCallback {
-                    override fun onSuccess(result: ScreenshotResult) {
-                        resultBitmap = result.hardwareBuffer?.let { hb ->
-                            Bitmap.wrapHardwareBuffer(hb, null)
+                takeScreenshot(
+                    Display.DEFAULT_DISPLAY,
+                    { runnable -> handler.post(runnable) },
+                    object : TakeScreenshotCallback {
+                        override fun onSuccess(result: ScreenshotResult) {
+                            resultBitmap = result.hardwareBuffer?.let { hb ->
+                                Bitmap.wrapHardwareBuffer(hb, null)
+                            }
+                            latch.countDown()
                         }
-                        latch.countDown()
+                        override fun onFailure(errorCode: Int) {
+                            Log.e(TAG, "Screenshot error code: $errorCode")
+                            latch.countDown()
+                        }
                     }
-                    override fun onFailure(errorCode: Int) {
-                        Log.e(TAG, "Screenshot error code: $errorCode")
-                        latch.countDown()
+                )
+
+                // Wait up to 2 seconds for screenshot callback
+                latch.await(2, java.util.concurrent.TimeUnit.SECONDS)
+                val hwBitmap = resultBitmap ?: run {
+                    Log.e(TAG, "Screenshot: bitmap was null after capture")
+                    return@withContext null
+                }
+
+                // Convert hardware bitmap to software bitmap for compression
+                val bitmap = hwBitmap.copy(Bitmap.Config.ARGB_8888, false) ?: run {
+                    Log.e(TAG, "Screenshot: failed to copy hardware bitmap")
+                    return@withContext null
+                }
+                hwBitmap.recycle()
+
+                // Compress on IO thread to avoid blocking Main
+                withContext(Dispatchers.IO) {
+                    try {
+                        val stream = ByteArrayOutputStream()
+                        val halfW = (bitmap.width / 2).coerceAtLeast(1)
+                        val halfH = (bitmap.height / 2).coerceAtLeast(1)
+                        val scaled = Bitmap.createScaledBitmap(bitmap, halfW, halfH, true)
+                        scaled.compress(Bitmap.CompressFormat.PNG, 70, stream)
+                        val base64 = Base64.encodeToString(stream.toByteArray(), Base64.NO_WRAP)
+                        bitmap.recycle()
+                        if (scaled !== bitmap) scaled.recycle()
+                        Log.d(TAG, "Screenshot compressed: ${base64.length} chars base64")
+                        base64
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Screenshot compression failed: ${e.message}")
+                        bitmap.recycle()
+                        null
                     }
                 }
-            )
-
-            // Wait up to 2 seconds for screenshot
-            latch.await(2, java.util.concurrent.TimeUnit.SECONDS)
-            val hwBitmap = resultBitmap ?: return null
-
-            // Convert hardware bitmap to software bitmap for compression
-            val bitmap = hwBitmap.copy(Bitmap.Config.ARGB_8888, false) ?: return null
-            hwBitmap.recycle()
-
-            val stream = ByteArrayOutputStream()
-            val halfW = (bitmap.width / 2).coerceAtLeast(1)
-            val halfH = (bitmap.height / 2).coerceAtLeast(1)
-            val scaled = Bitmap.createScaledBitmap(bitmap, halfW, halfH, true)
-            scaled.compress(Bitmap.CompressFormat.PNG, 70, stream)
-            val base64 = Base64.encodeToString(stream.toByteArray(), Base64.NO_WRAP)
-            bitmap.recycle()
-            if (scaled !== bitmap) scaled.recycle()
-            base64
-        } catch (e: Exception) {
-            Log.e(TAG, "Screenshot capture failed: ${e.message}")
-            null
+            } catch (e: Exception) {
+                Log.e(TAG, "Screenshot capture failed: ${e.message}")
+                null
+            }
         }
     }
 
     // ──────────────────────────────────────────────
-    // UI Tree Reading
+    // UI Tree Reading — Must run on Main thread
     // ──────────────────────────────────────────────
 
-    private fun readUITree(): String {
-        val rootNode = rootInActiveWindow ?: return "[]"
-        val nodes = mutableListOf<UINode>()
-        traverseNode(rootNode, nodes, 0)
-        return gson.toJson(nodes)
+    private suspend fun readUITree(): String {
+        return withContext(Dispatchers.Main) {
+            try {
+                val rootNode = rootInActiveWindow ?: return@withContext "[]"
+                val nodes = mutableListOf<UINode>()
+                traverseNode(rootNode, nodes, 0)
+                gson.toJson(nodes)
+            } catch (e: Exception) {
+                Log.e(TAG, "UI tree read failed: ${e.message}")
+                "[]"
+            }
+        }
     }
 
     private fun traverseNode(node: AccessibilityNodeInfo, list: MutableList<UINode>, depth: Int) {
@@ -512,7 +563,6 @@ class VayuService : AccessibilityService() {
 
     private fun executeType(text: String): String {
         // Strategy: Find focused editable field, set text via accessibility
-        val rootNode = rootInActiveWindow ?: return "TYPE failed: no root"
         val focusNode = findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
 
         if (focusNode != null && focusNode.isEditable) {
@@ -567,7 +617,6 @@ class VayuService : AccessibilityService() {
                 startActivity(intent)
                 "OPEN_APP $packageName"
             } else {
-                // Fallback: use home then search
                 "OPEN_APP failed: $packageName not found"
             }
         } catch (e: Exception) {
@@ -606,6 +655,8 @@ class VayuService : AccessibilityService() {
             else -> result
         }
 
+        Log.i(TAG, "═══ TASK $status ═══ $result (${elapsed}ms, $currentStep steps)")
+
         // Report to brain
         reportResult(task, status, result)
 
@@ -621,8 +672,6 @@ class VayuService : AccessibilityService() {
         isRunning = false
         currentStep = 0
         shouldAbort = false
-
-        Log.i(TAG, "Task $status in ${elapsed}ms — $result")
     }
 
     // ──────────────────────────────────────────────

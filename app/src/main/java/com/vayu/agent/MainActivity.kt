@@ -209,7 +209,7 @@ class MainActivity : AppCompatActivity() {
     // ──────────────────────────────────────────────
 
     private fun submitTask(description: String) {
-        // Submit to brain.py
+        // Submit to brain.py — MUST run on IO dispatcher
         lifecycleScope.launch {
             try {
                 val json = gson.toJson(mapOf(
@@ -221,7 +221,11 @@ class MainActivity : AppCompatActivity() {
                     .url("$BRAIN_URL/task/submit")
                     .post(body)
                     .build()
-                httpClient.newCall(request).execute().close()
+
+                // HTTP call on IO thread — NOT main thread
+                withContext(Dispatchers.IO) {
+                    httpClient.newCall(request).execute().close()
+                }
 
                 withContext(Dispatchers.Main) {
                     Toast.makeText(this@MainActivity, "Task submitted to VAYU", Toast.LENGTH_SHORT).show()
@@ -275,14 +279,19 @@ class MainActivity : AppCompatActivity() {
             if (serviceOnline) getColor(R.color.green_online) else getColor(R.color.red_kill)
         )
 
-        // Brain status
+        // Brain status — HTTP call MUST be on IO dispatcher
         lifecycleScope.launch {
             try {
                 val request = Request.Builder()
                     .url("$BRAIN_URL/status")
                     .get()
                     .build()
-                val response = httpClient.newCall(request).execute()
+
+                // Execute on IO thread — prevents NetworkOnMainThreadException
+                val response = withContext(Dispatchers.IO) {
+                    httpClient.newCall(request).execute()
+                }
+
                 withContext(Dispatchers.Main) {
                     if (response.isSuccessful) {
                         tvBrainStatus.text = "ONLINE"
